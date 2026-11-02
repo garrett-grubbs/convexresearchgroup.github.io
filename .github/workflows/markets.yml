@@ -1,0 +1,42 @@
+name: Update market data
+
+on:
+  schedule:
+    # every 30 min, 8am-6pm ET on weekdays (UTC hours cover both EST and EDT)
+    - cron: "*/30 12-22 * * 1-5"
+    # one Saturday run to settle Friday's closing marks
+    - cron: "0 14 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet yfinance pandas
+      - name: Fetch markets
+        run: python scripts/fetch_markets.py
+      - name: Market Pulse (open and close only; skips without API key)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/market_pulse.py
+      - name: Commit
+        run: |
+          git config user.name "crg-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "Update market data"
+          git pull --rebase origin main
+          git push

@@ -1,0 +1,43 @@
+name: Build research archive
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "notes/**"
+      - "data/research-meta.json"
+      - "scripts/build_research.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # git history lets undated filenames get the right year
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pypdf
+      - name: Build research.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/build_research.py
+      - name: Commit
+        run: |
+          git config user.name "crg-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "Update research archive"
+          git pull --rebase origin main
+          git push
