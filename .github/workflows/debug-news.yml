@@ -1,0 +1,23 @@
+name: debug news (temporary)
+on: workflow_dispatch
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet yfinance
+      - run: |
+          python - <<'PY'
+          import yfinance as yf, json
+          print("yfinance", yf.__version__)
+          t = yf.Ticker("NVDA")
+          try:
+              n = t.news; print("tk.news type", type(n), "len", len(n) if n else n)
+              if n: print(json.dumps(n[0], default=str)[:1500])
+          except Exception as e: print("tk.news error", repr(e))
+          try:
+              s = yf.Search("NVDA", news_count=5)
+              print("Search len", len(s.news)); print(json.dumps(s.news[0], default=str)[:800])
+          except Exception as e: print("Search error", repr(e))
+          PY
