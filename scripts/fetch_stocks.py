@@ -52,6 +52,11 @@ YF_SECTOR = {
     "Energy": "Energy", "Industrials": "Industrials", "Basic Materials": "Materials",
     "Utilities": "Utilities", "Real Estate": "Real Estate", "Communication Services": "Communication Services",
 }
+# Screener rows that aren't common stock (they carry the parent's market cap)
+import re as _re
+NON_COMMON = _re.compile(r"\b(notes?|debentures?|preferred|pfd|depositary|units?|warrants?|rights|subordinated|"
+                         r"baby bonds?|exchangeable|zones|trust preferred|due \d{4})\b|%", _re.I)
+
 # Nasdaq screener sector names -> GICS names
 NQ_SECTOR = {
     "Technology": "Information Technology", "Finance": "Financials", "Health Care": "Health Care",
@@ -97,6 +102,8 @@ def load_universe():
                 mcap = 0
             if not t or mcap < MIN_MCAP or any(ch in t for ch in "^ $") or len(t) > 6:
                 continue
+            if NON_COMMON.search(r.get("name") or ""):
+                continue  # notes, preferreds, units, warrants, rights, depositary shares
             name = (r.get("name") or t).replace(" Common Stock", "").replace(" Class A Ordinary Shares", " Class A").strip()
             fresh[t] = {"t": t, "n": name, "sector": NQ_SECTOR.get(r.get("sector") or "", ""),
                         "sub": r.get("industry") or "", "mcapHint": mcap, "idx": []}
@@ -347,6 +354,7 @@ def deep_fields(t):
     pre = info.get("preMarketPrice")
     post = info.get("postMarketPrice")
     out = {
+        "quoteType": info.get("quoteType"),
         "name": info.get("longName") or info.get("shortName"),
         "yfSector": info.get("sector"), "industry": info.get("industry"),
         "mcap": info.get("marketCap"), "exchange": info.get("fullExchangeName") or info.get("exchange"),
@@ -489,9 +497,12 @@ def full():
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = []
-    for t, st in stats.items():
+    for t, st in list(stats.items()):
         path = os.path.join(DIR, yf_sym(t) + ".json")
         d = deep.get(t)
+        if d and d.get("quoteType") and d["quoteType"] != "EQUITY":
+            del stats[t]  # Yahoo says it's not a common stock
+            continue
         if d is None and os.path.exists(path):  # keep yesterday's deep data rather than blanking it
             with open(path) as f:
                 old = json.load(f)
@@ -506,6 +517,7 @@ def full():
         if t in deep:
             rec["optionsUpdated"] = now
         rec.pop("yfSector", None)
+        rec.pop("quoteType", None)
         with open(path, "w") as f:
             json.dump(rec, f, separators=(",", ":"))
         rows.append(index_row(meta, st, d))
