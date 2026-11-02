@@ -27,6 +27,9 @@ jobs:
       - run: pip install --quiet yfinance pandas
       - name: Fetch markets
         run: python scripts/fetch_markets.py
+      - name: Refresh stock lookup quotes
+        run: |
+          if [ -f data/stocks/index.json ]; then python scripts/fetch_stocks.py --quotes || true; fi
       - name: Market Pulse (open and close only; skips without API key)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
