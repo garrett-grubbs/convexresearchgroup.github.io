@@ -1,7 +1,12 @@
 """Build the stock lookup data: data/stocks/index.json plus one JSON per ticker.
 
-Universe: S&P 500 + Nasdaq 100 (from Wikipedia, cached in data/stocks/universe.json)
-plus any extra tickers listed in data/stocks/extra.json, e.g. ["SPCX", "PLTR"].
+Universe: every NYSE/Nasdaq/AMEX common stock above MIN_MCAP (default $250M), from the
+Nasdaq stock screener, falling back to S&P 500 + Nasdaq 100 from Wikipedia, then to the cached
+universe.json. Extra tickers can be forced in via scripts/stocks_extra.json, e.g. ["SPCX"].
+
+Output goes to OUT_DIR (default data/stocks). In production the workflow points OUT_DIR at a
+checkout of the `stock-data` branch, which is force-pushed as a single commit each run so the
+site repo's history doesn't grow. The site reads it from raw.githubusercontent.com.
 
 Per ticker (Yahoo Finance via yfinance):
   tape        last, prior close, gap, volume vs 30d avg, ATR move, returns, relative perf vs SPY and sector ETF
@@ -25,10 +30,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIR = os.path.join(ROOT, "data", "stocks")
+DIR = os.path.abspath(os.environ.get("OUT_DIR") or os.path.join(ROOT, "data", "stocks"))
 UNIVERSE = os.path.join(DIR, "universe.json")
-EXTRA = os.path.join(DIR, "extra.json")
+EXTRA = os.path.join(ROOT, "scripts", "stocks_extra.json")
 INDEX = os.path.join(DIR, "index.json")
+MIN_MCAP = float(os.environ.get("MIN_MCAP", 250e6))
+DEEP_BUDGET_MIN = float(os.environ.get("DEEP_BUDGET_MIN", 240))  # stop deep pulls after this, keep old data
+WORKERS = int(os.environ.get("WORKERS", 6))
 
 SECTOR_ETF = {
     "Information Technology": "XLK", "Financials": "XLF", "Health Care": "XLV",
@@ -42,6 +50,13 @@ YF_SECTOR = {
     "Consumer Cyclical": "Consumer Discretionary", "Consumer Defensive": "Consumer Staples",
     "Energy": "Energy", "Industrials": "Industrials", "Basic Materials": "Materials",
     "Utilities": "Utilities", "Real Estate": "Real Estate", "Communication Services": "Communication Services",
+}
+# Nasdaq screener sector names -> GICS names
+NQ_SECTOR = {
+    "Technology": "Information Technology", "Finance": "Financials", "Health Care": "Health Care",
+    "Consumer Discretionary": "Consumer Discretionary", "Consumer Staples": "Consumer Staples", "Energy": "Energy",
+    "Industrials": "Industrials", "Basic Materials": "Materials", "Utilities": "Utilities",
+    "Real Estate": "Real Estate", "Telecommunications": "Communication Services",
 }
 
 
@@ -66,13 +81,39 @@ def load_universe():
             cached = {r["t"]: r for r in json.load(f)}
     fresh = {}
     try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=10000&download=true",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+                     "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.9"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            rows = json.loads(r.read().decode())["data"]["rows"]
+        for r in rows:
+            t = (r.get("symbol") or "").strip()
+            try:
+                mcap = float(r.get("marketCap") or 0)
+            except ValueError:
+                mcap = 0
+            if not t or mcap < MIN_MCAP or any(ch in t for ch in "^/ $") or len(t) > 6:
+                continue
+            name = (r.get("name") or t).replace(" Common Stock", "").replace(" Class A Ordinary Shares", " Class A").strip()
+            fresh[t] = {"t": t, "n": name, "sector": NQ_SECTOR.get(r.get("sector") or "", ""),
+                        "sub": r.get("industry") or "", "mcapHint": mcap, "idx": []}
+        print(f"Nasdaq screener: {len(fresh)} stocks above ${MIN_MCAP / 1e6:.0f}M")
+    except Exception as e:
+        print(f"Nasdaq screener failed: {e}", file=sys.stderr)
+        fresh = {}
+    if len(fresh) < 400:
+      fresh = {}
+      try:
+        import io
         import pandas as pd
         import urllib.request
 
         def tables(url):
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (CRG site bot)"})
             with urllib.request.urlopen(req, timeout=30) as r:
-                return pd.read_html(r.read().decode())
+                return pd.read_html(io.StringIO(r.read().decode()))
 
         for tb in tables("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"):
             if "Symbol" in tb.columns and "GICS Sector" in tb.columns:
@@ -96,7 +137,7 @@ def load_universe():
                         fresh[t] = {"t": t, "n": str(r[name_c]) if name_c else t, "sector": str(r[sec_c]) if sec_c else "",
                                     "sub": str(r[sub_c]) if sub_c else "", "idx": ["NDX"]}
                 break
-    except Exception as e:
+      except Exception as e:
         print(f"Universe refresh failed, using cache: {e}", file=sys.stderr)
 
     uni = fresh if len(fresh) > 400 else cached
@@ -343,7 +384,7 @@ def index_row(meta, s, deep=None):
     deep = deep or {}
     sector = meta.get("sector") or YF_SECTOR.get(deep.get("yfSector") or "", "")
     return {"t": meta["t"], "n": deep.get("name") or meta.get("n"), "sector": sector, "sub": meta.get("sub") or deep.get("industry"),
-            "mcap": deep.get("mcap"), "last": s["last"], "chgPct": s["chgPct"], "r1m": s["r1m"], "ytd": s["ytd"],
+            "mcap": deep.get("mcap") or meta.get("mcapHint"), "last": s["last"], "chgPct": s["chgPct"], "r1m": s["r1m"], "ytd": s["ytd"],
             "relVol": s["relVol"], "asOf": s["asOf"]}
 
 
@@ -384,7 +425,10 @@ def full():
     syms = [yf_sym(t) for t in tickers]
     extra = ["SPY"] + sorted(set(SECTOR_ETF.values()))
     print(f"Downloading history for {len(syms)} tickers")
-    hist = download(syms + extra, "1y")
+    import pandas as pd
+    allsyms = syms + extra
+    parts = [download(allsyms[i:i + 400], "1y") for i in range(0, len(allsyms), 400)]
+    hist = pd.concat(parts, axis=1) if len(parts) > 1 else parts[0]
     spy = hist["SPY"]["Close"] if "SPY" in hist.columns.get_level_values(0) else None
 
     stats = {}
@@ -399,17 +443,30 @@ def full():
             print(f"{t} history: {e}", file=sys.stderr)
     print(f"History stats for {len(stats)} tickers")
 
+    # deep pulls (info, options, news): largest names first, within a time budget
+    order = sorted(stats, key=lambda t: -(uni[t].get("mcapHint") or 0))
     deep = {}
     started = time.time()
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        futs = {ex.submit(deep_fields, t): t for t in stats}
-        for f in as_completed(futs):
+    deadline = started + DEEP_BUDGET_MIN * 60
+
+    def guarded(t):
+        if time.time() > deadline:
+            return None
+        return deep_fields(t)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futs = {ex.submit(guarded, t): t for t in order}
+        for i, f in enumerate(as_completed(futs), 1):
             t = futs[f]
             try:
-                deep[t] = f.result()
+                r = f.result()
+                if r is not None:
+                    deep[t] = r
             except Exception as e:
                 print(f"{t} deep: {e}", file=sys.stderr)
-    print(f"Deep fields for {len(deep)} tickers in {time.time() - started:.0f}s")
+            if i % 250 == 0:
+                print(f"  deep {i}/{len(order)} ({time.time() - started:.0f}s)", flush=True)
+    print(f"Deep fields for {len(deep)}/{len(order)} tickers in {time.time() - started:.0f}s", flush=True)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = []
@@ -431,6 +488,11 @@ def full():
         with open(path, "w") as f:
             json.dump(rec, f, separators=(",", ":"))
         rows.append(index_row(meta, st, d))
+    # drop files for names that left the universe
+    keep = {yf_sym(t) + ".json" for t in stats} | {"index.json", "universe.json"}
+    for fn in os.listdir(DIR):
+        if fn.endswith(".json") and fn not in keep:
+            os.remove(os.path.join(DIR, fn))
 
     rows.sort(key=lambda r: -(r.get("mcap") or 0))
     with open(INDEX, "w") as f:

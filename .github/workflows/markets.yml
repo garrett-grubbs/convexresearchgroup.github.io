@@ -28,8 +28,14 @@ jobs:
       - name: Fetch markets
         run: python scripts/fetch_markets.py
       - name: Refresh stock lookup quotes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OUT_DIR: ${{ github.workspace }}/stockdata
         run: |
-          if [ -f data/stocks/index.json ]; then python scripts/fetch_stocks.py --quotes || true; fi
+          scripts/stockdata_sync.sh pull "$OUT_DIR" || true
+          if [ -f "$OUT_DIR/index.json" ]; then
+            python scripts/fetch_stocks.py --quotes && scripts/stockdata_sync.sh push "$OUT_DIR" || echo "quote refresh skipped"
+          fi
       - name: Market Pulse (open and close only; skips without API key)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

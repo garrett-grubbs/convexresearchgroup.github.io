@@ -2,34 +2,33 @@ name: Update stock lookup data
 
 on:
   schedule:
-    # 6:35am ET in winter, 7:35am ET in summer (GitHub cron is UTC), weekdays
-    - cron: "35 11 * * 1-5"
+    # 5:00am ET in winter, 6:00am ET in summer (GitHub cron is UTC), weekdays.
+    # The full pull runs ~1 hour, largest names first, so it's done before the open.
+    - cron: "0 10 * * 1-5"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: data-commit
+  group: stock-data-full
   cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 300
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      OUT_DIR: ${{ github.workspace }}/stockdata
+      MIN_MCAP: "250000000"
+      DEEP_BUDGET_MIN: "240"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install --quiet yfinance pandas lxml
-      - name: Fetch stock data
-        run: python scripts/fetch_stocks.py
-      - name: Commit
-        run: |
-          git config user.name "crg-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add data/stocks
-          git diff --cached --quiet && exit 0
-          git commit -m "Update stock lookup data"
-          for i in 1 2 3; do git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && break; sleep 10; done
+      - run: scripts/stockdata_sync.sh pull "$OUT_DIR"
+      - run: python -u scripts/fetch_stocks.py
+      - run: scripts/stockdata_sync.sh push "$OUT_DIR"
