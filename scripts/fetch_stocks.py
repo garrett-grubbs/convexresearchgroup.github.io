@@ -19,6 +19,7 @@ Per ticker (Yahoo Finance via yfinance):
 Usage:
   python scripts/fetch_stocks.py            full refresh (run daily before the open)
   python scripts/fetch_stocks.py --quotes   fast price/volume refresh of index.json only (intraday)
+  python scripts/fetch_stocks.py --options 500   refresh options for the 500 largest names (midday)
 """
 
 import json
@@ -484,6 +485,8 @@ def full():
         sector = meta.get("sector") or YF_SECTOR.get(d.get("yfSector") or "", "")
         rec = {"t": t, "n": d.get("name") or meta.get("n"), "sector": sector, "sub": meta.get("sub") or d.get("industry"),
                "sectorEtf": SECTOR_ETF.get(sector), "idx": meta.get("idx", []), "updated": now, **st, **d}
+        if t in deep:
+            rec["optionsUpdated"] = now
         rec.pop("yfSector", None)
         with open(path, "w") as f:
             json.dump(rec, f, separators=(",", ":"))
@@ -500,5 +503,44 @@ def full():
     print(f"Wrote {len(rows)} stocks")
 
 
+def options_only(n):
+    """Midday refresh: re-pull the options block for the n largest names, using the latest quote."""
+    with open(INDEX) as f:
+        rows = json.load(f)["stocks"]
+    top = sorted(rows, key=lambda r: -(r.get("mcap") or 0))[:n]
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def one(r):
+        import yfinance as yf
+        path = os.path.join(DIR, yf_sym(r["t"]) + ".json")
+        if not os.path.exists(path):
+            return False
+        with open(path) as f:
+            rec = json.load(f)
+        earnings = (rec.get("catalysts") or {}).get("earnings")
+        opt = options_block(yf.Ticker(yf_sym(r["t"])), r.get("last") or rec.get("last"), earnings)
+        if opt is None:
+            return False
+        rec["options"] = opt
+        rec["optionsUpdated"] = now
+        with open(path, "w") as f:
+            json.dump(rec, f, separators=(",", ":"))
+        return True
+
+    started, ok = time.time(), 0
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        for fut in as_completed([ex.submit(one, r) for r in top]):
+            try:
+                ok += bool(fut.result())
+            except Exception as e:
+                print(f"options: {e}", file=sys.stderr)
+    print(f"Refreshed options for {ok}/{len(top)} names in {time.time() - started:.0f}s")
+
+
 if __name__ == "__main__":
-    quotes_only() if "--quotes" in sys.argv else full()
+    if "--quotes" in sys.argv:
+        quotes_only()
+    elif "--options" in sys.argv:
+        options_only(int(sys.argv[sys.argv.index("--options") + 1]))
+    else:
+        full()

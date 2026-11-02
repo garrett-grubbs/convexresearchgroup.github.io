@@ -3,6 +3,8 @@
 # The branch is force-pushed as a single commit each time, so it never builds up history.
 #   scripts/stockdata_sync.sh pull <dir>
 #   scripts/stockdata_sync.sh push <dir>
+#   scripts/stockdata_sync.sh push-tickers <dir>   merge per-ticker files onto the latest branch
+#                                                  (keeps index.json quote updates made meanwhile)
 set -euo pipefail
 mode="$1"; dir="$2"
 remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
@@ -25,4 +27,9 @@ elif [ "$mode" = push ]; then
   git commit -q -m "Stock data $(date -u +%Y-%m-%dT%H:%MZ)"
   git push -q -f "$remote" stock-data
   rm -rf .git
+elif [ "$mode" = push-tickers ]; then
+  tmp=$(mktemp -d)
+  "$0" pull "$tmp"
+  find "$dir" -maxdepth 1 -name '*.json' ! -name index.json ! -name universe.json -exec cp {} "$tmp/" \;
+  "$0" push "$tmp"
 fi

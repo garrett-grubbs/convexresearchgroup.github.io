@@ -2,9 +2,9 @@ name: Update stock lookup data
 
 on:
   schedule:
-    # 5:00am ET in winter, 6:00am ET in summer (GitHub cron is UTC), weekdays.
-    # The full pull runs ~1 hour, largest names first, so it's done before the open.
-    - cron: "0 10 * * 1-5"
+    # Full pull: 6:45am ET in winter, 7:45am in summer (GitHub cron is UTC), weekdays.
+    # Largest names go first, so they pick up real pre-market prices and finish before the open.
+    - cron: "45 11 * * 1-5"
   workflow_dispatch:
 
 permissions:
