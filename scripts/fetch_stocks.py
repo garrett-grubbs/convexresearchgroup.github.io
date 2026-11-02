@@ -90,12 +90,12 @@ def load_universe():
         with urllib.request.urlopen(req, timeout=60) as r:
             rows = json.loads(r.read().decode())["data"]["rows"]
         for r in rows:
-            t = (r.get("symbol") or "").strip()
+            t = (r.get("symbol") or "").strip().replace("/", ".")
             try:
                 mcap = float(r.get("marketCap") or 0)
             except ValueError:
                 mcap = 0
-            if not t or mcap < MIN_MCAP or any(ch in t for ch in "^/ $") or len(t) > 6:
+            if not t or mcap < MIN_MCAP or any(ch in t for ch in "^ $") or len(t) > 6:
                 continue
             name = (r.get("name") or t).replace(" Common Stock", "").replace(" Class A Ordinary Shares", " Class A").strip()
             fresh[t] = {"t": t, "n": name, "sector": NQ_SECTOR.get(r.get("sector") or "", ""),
@@ -296,17 +296,35 @@ def options_block(tk, last, earnings):
     return out
 
 
-def news_block(tk):
+def news_block(tk, sym, name):
+    """Yahoo's per-ticker feed (tk.news) often comes back empty, so fall back to Yahoo search.
+    Search results can be loosely related, so headlines naming the company or ticker rank first."""
+    import re
+    import yfinance as yf
+    raw = with_retry(lambda: tk.news) or []
+    if not raw:
+        raw = with_retry(lambda: yf.Search(sym, max_results=1, news_count=12).news) or []
+    base = re.sub(r"[,.]|\b(inc|corp|corporation|co|company|holdings|group|ltd|plc|class [a-z]|the)\b", " ",
+                  (name or "").lower())
+    keys = [w for w in base.split() if len(w) > 2][:2]
     items = []
-    for n in (with_retry(lambda: tk.news) or [])[:8]:
+    for n in raw:
         c = n.get("content", n)
         title = c.get("title")
         url = (c.get("canonicalUrl") or {}).get("url") or (c.get("clickThroughUrl") or {}).get("url") or n.get("link")
         pub = (c.get("provider") or {}).get("displayName") or n.get("publisher")
         when = c.get("pubDate") or ts_date(n.get("providerPublishTime"))
-        if title and url and str(url).startswith("http"):
-            items.append({"title": title, "url": url, "source": pub, "date": str(when)[:10] if when else None})
-    return items[:5]
+        related = n.get("relatedTickers") or []
+        if not (title and url and str(url).startswith("http")):
+            continue
+        tl = title.lower()
+        named = bool(re.search(r"\b" + re.escape(sym.lower()) + r"\b", tl)) or any(k in tl for k in keys)
+        if not named and not (related and related[0] == sym):
+            continue
+        items.append((0 if named else 1, {"title": title, "url": url, "source": pub,
+                                          "date": str(when)[:10] if when else None}))
+    items.sort(key=lambda x: (x[0], -(int((x[1]["date"] or "0").replace("-", "")))))
+    return [i for _, i in items][:5]
 
 
 def deep_fields(t):
@@ -358,7 +376,7 @@ def deep_fields(t):
         out["options"] = None
         print(f"{t} options: {e}", file=sys.stderr)
     try:
-        out["news"] = news_block(tk)
+        out["news"] = news_block(tk, yf_sym(t), out.get("name"))
     except Exception:
         out["news"] = []
     return out
