@@ -294,7 +294,7 @@
         <div class="card-head"><span class="card-title">Catalysts and valuation</span></div>
         ${kv([
           ['Next earnings', c.earnings ? `${fmtDayYr(c.earnings)}<small>${daysTo(c.earnings)} days</small>` : '–'],
-          ['Ex-dividend', c.exDiv ? fmtDayYr(c.exDiv) : '–'],
+          [c.exDiv && daysTo(c.exDiv) < 0 ? 'Last ex-dividend' : 'Ex-dividend', c.exDiv ? fmtDayYr(c.exDiv) : '–'],
           ['Dividend yield', v.divYield != null ? v.divYield.toFixed(2) + '%' : '–'],
           ['P/E trailing', v.pe ?? '–'],
           ['P/E forward', v.fwdPe ?? '–'],
