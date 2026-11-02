@@ -272,7 +272,7 @@
         ])}
       </div>
       <div class="card">
-        <div class="card-head"><span class="card-title">Options</span><span class="card-sub">${f ? 'Front expiry ' + fmtDay(f.expiry) + ', ' + f.dte + 'd' : ''}</span></div>
+        <div class="card-head"><span class="card-title">Options</span><span class="card-sub">${f ? 'Exp ' + fmtDay(f.expiry) + ', as of ' + esc(fmtET(s.optionsUpdated || s.updated)) : ''}</span></div>
         ${!f ? '<p class="na">No listed options data for this stock.</p>' : kv([
           ['ATM implied vol', f.atmIv != null ? f.atmIv.toFixed(1) + '%' : '–'],
           ['20-day realized vol', s.hv20 != null ? s.hv20.toFixed(1) + '%' : '–'],
