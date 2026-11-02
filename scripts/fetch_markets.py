@@ -156,9 +156,10 @@ def build_yahoo():
     import yfinance as yf  # imported here so FRED still runs if yfinance is missing
 
     tickers = [t for group in YAHOO.values() for t, _ in group]
+    # threads=False avoids yfinance's sqlite cache lock ("database is locked")
     hist = yf.download(
         tickers, period="1y", interval="1d", auto_adjust=False,
-        group_by="ticker", progress=False, threads=True,
+        group_by="ticker", progress=False, threads=False,
     )
     out = {}
     spx_spark = None
