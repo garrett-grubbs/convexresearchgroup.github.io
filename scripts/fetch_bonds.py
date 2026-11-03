@@ -290,7 +290,8 @@ def build_history():
     if not got:
         return None
     daily = [sid for sid in got if sid not in WEEKLY]
-    dates = sorted({d for sid in daily for d in got[sid][2]})
+    # weekdays only (fed funds prints seven days a week); ICE BofA corporate series only go back 3 years on FRED
+    dates = sorted({d for sid in daily for d in got[sid][2] if date.fromisoformat(d).weekday() < 5})
     series = {}
     for sid, (label, group, m) in got.items():
         vals, last = [], None
