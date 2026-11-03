@@ -204,7 +204,10 @@ def build_auctions():
         frn = (r.get("floatingRate") or "").lower() == "yes"
         kind = "TIPS" if tips else "FRN" if frn else st
         reopen = (r.get("reopening") or "").lower() == "yes"
-        base_term = (r.get("originalSecurityTerm") or r.get("securityTerm") or "").strip()
+        # coupons: name reopenings by their original tenor (a "9-Year 10-Month" reopening is the 10Y);
+        # bills: use the actual term (a 13-week reopening of a 26-week bill is a 13W bill)
+        base_term = ((r.get("securityTerm") if st == "Bill" else r.get("originalSecurityTerm"))
+                     or r.get("securityTerm") or "").strip()
         short = base_term.replace("-Year", "Y").replace("-Week", "W").replace("-Month", "M").replace(" ", "")
         label = f"{short} {kind}" + (" reopening" if reopen and st != "Bill" else "")
         if st == "Bill":
