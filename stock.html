@@ -196,6 +196,10 @@
       : s.post && s.post.price ? `<span class="ext">After hours <b>${px(s.post.price)}</b> ${span(fmtPct(s.post.chgPct), s.post.chgPct)}</span>` : '';
     const subline = [s.sector, s.sub].filter(Boolean).map(esc).join(', ') + (s.exchange ? '. ' + esc(s.exchange) : '');
     const read = deskRead(s);
+    // same relevance rule as the pipeline: keep headlines that name the company or ticker
+    const nameKeys = (s.n || '').toLowerCase().replace(/[,.]|\b(inc|corp|corporation|co|company|holdings|group|ltd|plc|the)\b/g, ' ').split(/\s+/).filter(w => w.length > 2).slice(0, 2);
+    const tRe = new RegExp('\\b' + s.t.toLowerCase().replace('.', '\\.') + '\\b');
+    const news = (s.news || []).filter(n => { const tl = (n.title || '').toLowerCase(); return tRe.test(tl) || nameKeys.some(k => tl.includes(k)); });
 
     view.innerHTML = `
     <div class="sh">
@@ -308,8 +312,8 @@
         <div class="mk-table-wrap" id="peers"></div>
       </div>
       <div class="card">
-        <div class="card-head"><span class="card-title">Headlines</span></div>
-        ${s.news && s.news.length ? `<ul class="news">${s.news.map(n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener nofollow">${esc(n.title)}</a><span>${esc(n.source || '')}${n.date ? ', ' + esc(fmtDay(n.date)) : ''}</span></li>`).join('')}</ul>` : '<p class="na">No recent headlines.</p>'}
+        <div class="card-head"><span class="card-title">Headlines</span><a class="card-sub" href="https://finance.yahoo.com/quote/${encodeURIComponent(yfSym(s.t))}/news" target="_blank" rel="noopener">More news</a></div>
+        ${news.length ? `<ul class="news">${news.map(n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener nofollow">${esc(n.title)}</a><span>${esc(n.source || '')}${n.date ? ', ' + esc(fmtDay(n.date)) : ''}</span></li>`).join('')}</ul>` : '<p class="na">No recent headlines.</p>'}
       </div>
     </div>
     <p class="mk-disclaimer">Snapshot ${esc(fmtET(s.updated))}. Price, volume and options from Yahoo Finance (delayed); short interest from exchange reports via Yahoo. Desk read is generated from these figures and is not a recommendation.</p>`;
