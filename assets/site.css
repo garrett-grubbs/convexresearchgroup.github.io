@@ -231,3 +231,23 @@ footer .brand span { font-size: 14px; }
 .hero-search button { height: 42px; padding: 0 18px; border-radius: 6px; border: 1px solid var(--rule); background: var(--wash); color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; }
 .hero-search button:hover { border-color: var(--ink); }
 .hero-latest { margin-top: 24px; }
+
+/* tab navigation */
+.nav .wrap { gap: 28px; }
+.tabs-nav { display: flex; gap: 4px; margin-left: auto; height: 100%; }
+.tabs-nav a { display: flex; align-items: center; padding: 0 14px; height: 100%; font-size: 15px; color: var(--muted);
+  text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs-nav a:hover { color: var(--ink); }
+.tabs-nav a.on { color: var(--ink); font-weight: 500; border-bottom-color: var(--ink); }
+.nav-sub { height: 36px; padding: 0 16px; font-size: 14px; }
+[data-panel][hidden] { display: none !important; }
+.section[data-panel] { border-top: none; min-height: 60vh; }
+@media (max-width: 760px) {
+  .nav .wrap { flex-wrap: wrap; height: auto; padding-top: 10px; gap: 0 12px; }
+  .brand { flex: 1; }
+  .nav-sub { height: 32px; }
+  .tabs-nav { order: 3; width: 100%; margin: 6px -16px 0; padding: 0 8px; height: 44px; overflow-x: auto; scrollbar-width: none; }
+  .tabs-nav::-webkit-scrollbar { display: none; }
+  .tabs-nav a { padding: 0 12px; white-space: nowrap; }
+  html { scroll-padding-top: 110px; }
+}

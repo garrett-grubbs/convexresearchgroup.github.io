@@ -1,7 +1,8 @@
 /* Stock lookup page */
 .nav-links a.on { color: var(--ink); font-weight: 500; }
 
-.lookup { padding: 40px 0 8px; }
+.lookup { padding: 0 0 8px; }
+.stocks .sec-head { margin-bottom: 20px; }
 .search { position: relative; max-width: 640px; }
 .search input {
   width: 100%; height: 52px; padding: 0 18px 0 46px; border: 1px solid #C9CFD9; border-radius: 8px;

@@ -23,6 +23,7 @@ const fmtET = iso => new Date(iso).toLocaleString('en-US', { timeZone: 'America/
 /* ---------- generic line chart (shared x positions, crosshair tooltip) ---------- */
 function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = false }) {
   const draw = () => {
+    if (!el.isConnected || (el.offsetParent === null && el.innerHTML)) return;  // hidden tab: keep last render
     el.innerHTML = '';
     const W = Math.max(260, el.clientWidth), H = height;
     const m = { t: 10, r: 12, b: 26, l: 44 };
@@ -110,11 +111,13 @@ const dateTicks = (n, iw) => {
   return [...Array(k).keys()].map(j => Math.round(j * (n - 1) / (k - 1)));
 };
 const redraws = [];
+window.redraws = redraws;
 let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => redraws.forEach(f => f()), 150); });
 
 /* ---------- diverging horizontal bars ---------- */
 function sectorBars(el, rows) {
   const draw = () => {
+    if (!el.isConnected || (el.offsetParent === null && el.innerHTML)) return;  // hidden tab: keep last render
     el.innerHTML = '';
     if (!rows.length) { el.innerHTML = '<p class="mk-empty">No data yet.</p>'; return; }
     const sorted = [...rows].sort((a, b) => b.chgPct - a.chgPct);
