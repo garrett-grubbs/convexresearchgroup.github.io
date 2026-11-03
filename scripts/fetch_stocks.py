@@ -326,8 +326,8 @@ def news_block(tk, sym, name):
             continue
         tl = title.lower()
         named = bool(re.search(r"\b" + re.escape(sym.lower()) + r"\b", tl)) or any(k in tl for k in keys)
-        if not named and not (related and related[0] == sym):
-            continue
+        if not named:
+            continue  # search results drift off-topic; only keep headlines naming the company
         items.append((0 if named else 1, {"title": title, "url": url, "source": pub,
                                           "date": str(when)[:10] if when else None}))
     items.sort(key=lambda x: (x[0], -(int((x[1]["date"] or "0").replace("-", "")))))
