@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "bonds.json")
+HIST_OUT = os.path.join(ROOT, "data", "bond_history.json")
 UA = {"User-Agent": "Mozilla/5.0 (CRG site bot)"}
 
 NOMINAL = [("DGS1MO", "1M", 1 / 12), ("DGS3MO", "3M", .25), ("DGS6MO", "6M", .5), ("DGS1", "1Y", 1), ("DGS2", "2Y", 2),
@@ -255,6 +256,55 @@ def build_auctions():
     return {"recent": recent[:14], "bills": bills, "upcoming": up[:16]}
 
 
+# ------------------------------------------------------------------ compare tool history
+HISTORY = [  # (FRED id, label, group); all are yields or rates in percent
+    ("DGS1MO", "1M T-bill", "Treasuries"), ("DGS3MO", "3M T-bill", "Treasuries"), ("DGS6MO", "6M T-bill", "Treasuries"),
+    ("DGS1", "1Y Treasury", "Treasuries"), ("DGS2", "2Y Treasury", "Treasuries"), ("DGS3", "3Y Treasury", "Treasuries"),
+    ("DGS5", "5Y Treasury", "Treasuries"), ("DGS7", "7Y Treasury", "Treasuries"), ("DGS10", "10Y Treasury", "Treasuries"),
+    ("DGS20", "20Y Treasury", "Treasuries"), ("DGS30", "30Y Treasury", "Treasuries"),
+    ("DFII5", "5Y real (TIPS)", "Real yields"), ("DFII7", "7Y real (TIPS)", "Real yields"),
+    ("DFII10", "10Y real (TIPS)", "Real yields"), ("DFII20", "20Y real (TIPS)", "Real yields"), ("DFII30", "30Y real (TIPS)", "Real yields"),
+    ("T5YIE", "5Y breakeven", "Inflation"), ("T10YIE", "10Y breakeven", "Inflation"), ("T5YIFR", "5y5y forward", "Inflation"),
+    ("DFF", "Effective fed funds", "Policy and funding"), ("SOFR", "SOFR", "Policy and funding"),
+    ("THREEFYTP10", "10Y term premium", "Policy and funding"),
+    ("MORTGAGE30US", "30Y mortgage", "Mortgages"), ("MORTGAGE15US", "15Y mortgage", "Mortgages"),
+    ("BAMLC0A1CAAAEY", "AAA corporate yield", "Corporate yields"), ("BAMLC0A2CAAEY", "AA corporate yield", "Corporate yields"),
+    ("BAMLC0A3CAEY", "A corporate yield", "Corporate yields"), ("BAMLC0A4CBBBEY", "BBB corporate yield", "Corporate yields"),
+    ("BAMLC0A0CMEY", "IG index yield", "Corporate yields"), ("BAMLH0A1HYBBEY", "BB high yield", "Corporate yields"),
+    ("BAMLH0A2HYBEY", "B high yield", "Corporate yields"), ("BAMLH0A3HYCEY", "CCC high yield", "Corporate yields"),
+    ("BAMLH0A0HYM2EY", "HY index yield", "Corporate yields"), ("BAMLEMCBPIEY", "EM corporate yield", "Corporate yields"),
+]
+WEEKLY = {"MORTGAGE30US", "MORTGAGE15US", "THREEFYTP10"}
+
+
+def build_history():
+    start = date.today() - timedelta(days=5 * 365 + 10)
+    got = {}
+    for sid, label, group in HISTORY:
+        try:
+            rows = fred(sid, start)
+            if rows:
+                got[sid] = (label, group, dict(rows))
+        except Exception as e:
+            print(f"history {sid}: {e}", file=sys.stderr)
+    if not got:
+        return None
+    daily = [sid for sid in got if sid not in WEEKLY]
+    # weekdays only (fed funds prints seven days a week); ICE BofA corporate series only go back 3 years on FRED
+    dates = sorted({d for sid in daily for d in got[sid][2] if date.fromisoformat(d).weekday() < 5})
+    series = {}
+    for sid, (label, group, m) in got.items():
+        vals, last = [], None
+        for d in dates:
+            v = m.get(d)
+            if sid in WEEKLY:  # carry weekly prints forward so they plot as a continuous line
+                last = v if v is not None else last
+                v = last
+            vals.append(rnd(v, 3))
+        series[sid] = {"label": label, "group": group, "v": vals}
+    return {"updated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "dates": dates, "series": series}
+
+
 # ------------------------------------------------------------------ bond ETFs
 def build_etfs():
     import yfinance as yf
@@ -296,6 +346,14 @@ def main():
                 print(f"{key}: ok")
         except Exception as e:
             print(f"{key} failed, keeping previous: {e}", file=sys.stderr)
+    try:
+        h = build_history()
+        if h:
+            with open(HIST_OUT, "w") as f:
+                json.dump(h, f, separators=(",", ":"))
+            print(f"history: {len(h['series'])} series x {len(h['dates'])} days")
+    except Exception as e:
+        print(f"history failed, keeping previous: {e}", file=sys.stderr)
     data["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with open(OUT, "w") as f:
         json.dump(data, f, separators=(",", ":"))

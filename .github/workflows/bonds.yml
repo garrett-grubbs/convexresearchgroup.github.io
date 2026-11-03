@@ -28,7 +28,7 @@ jobs:
         run: |
           git config user.name "crg-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/bonds.json
+          git add data/bonds.json data/bond_history.json
           git diff --cached --quiet && exit 0
           git commit -m "Update bonds data"
           for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 10; done
