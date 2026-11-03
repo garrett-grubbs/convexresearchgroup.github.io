@@ -14,7 +14,10 @@ jobs:
               try:
                   d = get(u); print(u, "count", len(d))
                   if d:
-                      print("KEYS", sorted(d[0].keys()))
+                      print("KEYS", " ".join(sorted(d[0].keys())))
+                      done = [x for x in d if x.get("bidToCoverRatio")]
+                      if done:
+                          r = done[0]; print("SAMPLE", json.dumps({k: v for k, v in r.items() if v not in (None, "", "null") and any(w in k.lower() for w in ("date","term","type","yield","rate","margin","indirect","direct","dealer","competitive","offering","total","reopen","inflation","float","cash","description","price"))}))
                       notes = [x for x in d if x.get("securityType") in ("Note", "Bond")]
                       for r in (notes[:2] or d[:2]):
                           print(json.dumps({k: v for k, v in r.items() if v not in (None, "", "null")})[:1200])
