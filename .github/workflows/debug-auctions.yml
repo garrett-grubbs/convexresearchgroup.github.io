@@ -1,0 +1,20 @@
+name: debug auctions (temporary)
+on: workflow_dispatch
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          python3 - <<'PY'
+          import json, urllib.request, urllib.parse
+          base = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query"
+          q = base + "?" + urllib.parse.urlencode({"filter": "auction_date:gte:2026-10-01", "sort": "-auction_date", "page[size]": "200"}, safe=":,")
+          print(q)
+          d = json.loads(urllib.request.urlopen(urllib.request.Request(q, headers={"User-Agent": "Mozilla/5.0"}), timeout=40).read())
+          rows = d.get("data", [])
+          print("count", len(rows), "meta", json.dumps(d.get("meta", {}).get("total-count")))
+          if rows:
+              print("KEYS", sorted(rows[0].keys()))
+              for r in rows[:3] + [x for x in rows if x.get("security_type") == "Note"][:2]:
+                  print(json.dumps({k: v for k, v in r.items() if v not in (None, "", "null")})[:1500])
+          PY
