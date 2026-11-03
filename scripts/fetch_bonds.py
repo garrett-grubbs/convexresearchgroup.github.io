@@ -3,7 +3,7 @@
 Sources (no API keys):
   FRED (St. Louis Fed)    Treasury curve, TIPS real yields, breakevens, 5y5y, term premium,
                           fed funds, SOFR, ICE BofA credit spreads and yields by rating
-  Treasury Fiscal Data    auction results and the announced auction schedule
+  TreasuryDirect          auction results (same day) and the announced auction schedule
   Yahoo Finance           bond ETF prices and distribution yields
 
 Run by .github/workflows/bonds.yml. Each block falls back to the previous file's
@@ -185,64 +185,71 @@ def build_credit():
 
 
 # ------------------------------------------------------------------ Treasury auctions
-TERM_ORDER = {"Bill": 0, "CMB": 0, "Note": 1, "Bond": 2, "TIPS Note": 3, "TIPS Bond": 3, "FRN Note": 4}
+TD = "https://www.treasurydirect.gov/TA_WS/securities/"
 
 
 def build_auctions():
-    since = (date.today() - timedelta(days=550)).isoformat()
-    base = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query"
-    params = {"filter": f"auction_date:gte:{since}", "sort": "-auction_date", "page[size]": "1000"}
-    data = json.loads(get(base + "?" + urllib.parse.urlencode(params, safe=":,")))["data"]
-
+    """TreasuryDirect's auction service: results post within minutes of each auction."""
     def num(x):
         try:
             return float(str(x).replace(",", ""))
         except (TypeError, ValueError):
             return None
 
-    rows = []
-    for r in data:
-        st, term = (r.get("security_type") or "").strip(), (r.get("security_term") or "").strip()
-        if r.get("cash_management_bill_cmb") == "Yes" or "CMB" in st:
-            continue
-        is_tips = (r.get("inflation_index_security") or "").lower() == "yes"
-        is_frn = (r.get("floating_rate") or "").lower() == "yes"
-        kind = "TIPS" if is_tips else "FRN" if is_frn else st
-        label = f"{term} {'TIPS' if is_tips else 'FRN' if is_frn else st}".replace("-Year", "Y").replace("-Week", "W") \
-            .replace("-Month", "M")
-        comp = num(r.get("comp_accepted"))
-        ind, dirc, pd_ = num(r.get("indirect_bidder_accepted")), num(r.get("direct_bidder_accepted")), num(r.get("primary_dealer_accepted"))
-        hy = num(r.get("high_yield")) if st != "Bill" else (num(r.get("high_investment_rate")) or num(r.get("high_discount_rate")))
-        if is_frn:
-            hy = num(r.get("high_discnt_margin")) or num(r.get("high_discount_margin"))
-        rows.append({
-            "date": r.get("auction_date"), "issue": r.get("issue_date"), "cusip": r.get("cusip"),
-            "type": kind, "term": term, "label": label, "reopening": (r.get("reopening") or "").lower() == "yes",
-            "size": num(r.get("offering_amt")), "highYield": hy, "btc": num(r.get("bid_to_cover_ratio")),
-            "indirectPct": rnd(ind / comp * 100, 1) if comp and ind is not None else None,
-            "directPct": rnd(dirc / comp * 100, 1) if comp and dirc is not None else None,
-            "dealerPct": rnd(pd_ / comp * 100, 1) if comp and pd_ is not None else None,
-        })
-    today = date.today().isoformat()
-    done = [r for r in rows if r["btc"]]
-    upcoming = sorted([r for r in rows if not r["btc"] and r["date"] and r["date"] >= today], key=lambda r: r["date"])
+    def norm(r):
+        st = (r.get("securityType") or "").strip()
+        if (r.get("cashManagementBill") or "").lower() == "yes":
+            return None
+        tips = (r.get("inflationProtected") or "").lower() == "yes"
+        frn = (r.get("floatingRate") or "").lower() == "yes"
+        kind = "TIPS" if tips else "FRN" if frn else st
+        reopen = (r.get("reopening") or "").lower() == "yes"
+        base_term = (r.get("originalSecurityTerm") or r.get("securityTerm") or "").strip()
+        short = base_term.replace("-Year", "Y").replace("-Week", "W").replace("-Month", "M").replace(" ", "")
+        label = f"{short} {kind}" + (" reopening" if reopen and st != "Bill" else "")
+        if st == "Bill":
+            yld = num(r.get("investmentRate")) or num(r.get("highRate"))
+        elif frn:
+            yld = num(r.get("highDiscountMargin"))
+        else:
+            yld = num(r.get("highYield"))
+        ind = num(r.get("indirectBiddersCompetitiveParAwarded"))
+        dirc = num(r.get("directBiddersCompetitiveParAwarded"))
+        pd_ = num(r.get("primaryDealersCompetitiveParAwarded"))
+        comp = sum(x for x in (ind, dirc, pd_) if x) or None
+        pct = lambda x: rnd(x / comp * 100, 1) if comp and x is not None else None
+        return {
+            "date": (r.get("competitiveAuctionCloseDate") or r.get("auctionDate") or "")[:10],
+            "time": r.get("competitiveAuctionCloseTime"), "issue": (r.get("issueDate") or "")[:10],
+            "cusip": r.get("cusip"), "type": kind, "term": base_term, "label": label, "reopening": reopen,
+            "size": num(r.get("offeringAmount")), "highYield": yld, "yieldIsMargin": frn,
+            "btc": num(r.get("bidToCoverRatio")),
+            "indirectPct": pct(ind), "directPct": pct(dirc), "dealerPct": pct(pd_),
+        }
 
-    # compare each recent coupon auction with the prior six of the same term and type
+    done = [x for x in (norm(r) for r in json.loads(get(TD + "auctioned?format=json&days=550", 90))) if x and x["btc"]]
+    done.sort(key=lambda r: r["date"], reverse=True)
+    up = [x for x in (norm(r) for r in json.loads(get(TD + "upcoming?format=json", 60))) if x and x["date"]]
+    up.sort(key=lambda r: (r["date"], r["time"] or ""))
+
     def avg(xs):
         xs = [x for x in xs if x is not None]
         return rnd(sum(xs) / len(xs), 2) if xs else None
-    recent = []
+
     coupons = [r for r in done if r["type"] != "Bill"]
+    cutoff = (date.today() - timedelta(days=35)).isoformat()
+    recent = []
     for r in coupons:
-        if r["date"] < (date.today() - timedelta(days=21)).isoformat():
-            continue
+        if r["date"] < cutoff:
+            break
         prior = [p for p in coupons if p["type"] == r["type"] and p["term"] == r["term"] and p["date"] < r["date"]][:6]
         r["btcAvg6"] = avg([p["btc"] for p in prior])
         r["indirectAvg6"] = avg([p["indirectPct"] for p in prior])
+        r["dealerAvg6"] = avg([p["dealerPct"] for p in prior])
         r["priorYield"] = prior[0]["highYield"] if prior else None
         recent.append(r)
-    bills = [r for r in done if r["type"] == "Bill" and r["date"] >= (date.today() - timedelta(days=8)).isoformat()]
-    return {"recent": recent[:14], "bills": bills[:12], "upcoming": upcoming[:16]}
+    bills = [r for r in done if r["type"] == "Bill"][:10]
+    return {"recent": recent[:14], "bills": bills, "upcoming": up[:16]}
 
 
 # ------------------------------------------------------------------ bond ETFs
