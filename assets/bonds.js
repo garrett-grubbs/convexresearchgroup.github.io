@@ -166,19 +166,24 @@ function cmpPicker() {
   const groups = {};
   Object.entries(H.series).forEach(([id, s]) => (groups[s.group] = groups[s.group] || []).push([id, s]));
   const el = document.getElementById('cmp-picker');
-  el.innerHTML = GROUP_ORDER.filter(g => groups[g]).map(g => `<div><h4>${esc(g)}</h4><div class="chips">${groups[g].map(([id, s]) =>
-    `<button type="button" class="chip" data-id="${esc(id)}" aria-pressed="false">${esc(s.label)}</button>`).join('')}</div></div>`).join('');
-  el.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => cmpPick(b.dataset.id)));
+  el.innerHTML = `<label class="cmp-add"><span class="sr-only">Add a series</span>
+      <select id="cmp-select" aria-label="Add a series to the chart"><option value="">Add a series&hellip;</option>
+      ${GROUP_ORDER.filter(g => groups[g]).map(g => `<optgroup label="${esc(g)}">${groups[g].map(([id, s]) => `<option value="${esc(id)}">${esc(s.label)}</option>`).join('')}</optgroup>`).join('')}
+      </select></label>
+    <div class="cmp-tags" id="cmp-tags"></div>`;
+  const sel = document.getElementById('cmp-select');
+  sel.addEventListener('change', () => { if (sel.value) cmpPick(sel.value); sel.value = ''; });
 }
 
 function cmpDraw() {
   const full = cmp.picked.length >= 4;
-  document.querySelectorAll('#cmp-picker .chip').forEach(b => {
-    const p = cmp.picked.find(x => x.id === b.dataset.id);
-    b.setAttribute('aria-pressed', String(!!p));
-    b.disabled = !p && full;
-    b.innerHTML = (p ? swatch(p.slot) : '') + esc(H.series[b.dataset.id].label);
-  });
+  const selEl = document.getElementById('cmp-select');
+  selEl.disabled = full;
+  selEl.options[0].textContent = full ? 'Four series max: remove one to add another' : 'Add a series\u2026';
+  [...selEl.querySelectorAll('option[value]')].forEach(o => { if (o.value) o.disabled = cmp.picked.some(p => p.id === o.value); });
+  const tags = document.getElementById('cmp-tags');
+  tags.innerHTML = cmp.picked.map(p => `<span class="tag">${swatch(p.slot)}${esc(H.series[p.id].label)}<button type="button" data-id="${esc(p.id)}" aria-label="Remove ${esc(H.series[p.id].label)}">&times;</button></span>`).join('');
+  tags.querySelectorAll('button').forEach(b => b.addEventListener('click', () => cmpPick(b.dataset.id)));
   document.querySelectorAll('#cmp-range button').forEach(b => b.classList.toggle('on', b.dataset.r === cmp.range));
   document.querySelectorAll('#cmp-mode button').forEach(b => b.classList.toggle('on', b.dataset.m === cmp.mode));
 
