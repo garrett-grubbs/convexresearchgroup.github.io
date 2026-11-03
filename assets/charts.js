@@ -53,7 +53,7 @@ function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = 
     series.forEach(s => {
       let d = '';
       s.ys.forEach((v, i) => { if (v != null) d += (d ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); });
-      svgEl('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': s.dash ? '5 4' : 'none' }, svg);
+      svgEl('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': s.dash ? (typeof s.dash === 'string' ? s.dash : '5 4') : 'none' }, svg);
       if (s.dots) s.ys.forEach((v, i) => v != null && svgEl('circle', { cx: x(i), cy: y(v), r: 3.5, fill: s.color, stroke: '#fff', 'stroke-width': 2 }, svg));
     });
     // hover layer
