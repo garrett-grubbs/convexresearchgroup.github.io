@@ -92,3 +92,6 @@
   .ret-strip div:nth-child(3) { border-right: none; }
   .ret-strip div:nth-child(n+4) { border-top: 1px solid var(--rule); }
 }
+
+.peers-head { margin-bottom: 2px; }
+.peer-ind { font-size: 13px; color: var(--muted); margin-bottom: 12px; line-height: 1.4; }

@@ -255,7 +255,8 @@ function renderStock(s) {
       ])}
     </div>
     <div class="card">
-      <div class="card-head"><span class="card-title">Peers</span><span class="card-sub" id="peer-sub"></span></div>
+      <div class="card-head peers-head"><span class="card-title">Peers</span><span class="card-sub">By market cap</span></div>
+        <p class="peer-ind" id="peer-sub"></p>
       <div class="mk-table-wrap" id="peers"></div>
     </div>
     <div class="card">
@@ -288,7 +289,7 @@ function renderStock(s) {
   peers = peers.sort((a, b) => (b.mcap || 0) - (a.mcap || 0));
   let top = peers.slice(0, 7);
   if (!top.some(r => r.t === s.t)) { const me = byT.get(s.t); if (me) top = [...top.slice(0, 6), me]; }
-  document.getElementById('peer-sub').textContent = label ? label + ', by market cap' : '';
+  document.getElementById('peer-sub').textContent = label ? (peers.some(r => r.sub === s.sub) && label === s.sub ? 'Industry: ' : 'Sector: ') + label : '';
   document.getElementById('peers').innerHTML = top.length > 1 ? `<table class="mk tbl-peers"><thead><tr><th>Stock</th><th>1D</th><th>1M</th><th>YTD</th></tr></thead><tbody>
     ${top.map(r => `<tr class="${r.t === s.t ? 'me' : ''}"><td class="name"><a href="?t=${encodeURIComponent(r.t)}#stocks" data-t="${esc(r.t)}">${esc(r.t)}</a></td>${cell(fmtPct(r.chgPct), r.chgPct)}${cell(pct1(r.r1m), r.r1m)}${cell(pct1(r.ytd), r.ytd)}</tr>`).join('')}
     </tbody></table>` : '<p class="na">No peers in coverage.</p>';
