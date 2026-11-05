@@ -2,9 +2,9 @@ name: Update stock lookup data
 
 on:
   schedule:
-    # Full pull: 6:45am ET in winter, 7:45am in summer (GitHub cron is UTC), weekdays.
-    # Largest names go first, so they pick up real pre-market prices and finish before the open.
-    - cron: "45 11 * * 1-5"
+    # Full pull, early and off-peak (2:23 to 5:23am ET in winter). GitHub can delay or skip
+    # a start, so there are four; the first to run does the pull and the rest exit.
+    - cron: "23 7,8,9,10 * * 1-5"
   workflow_dispatch:
 
 permissions:
@@ -30,5 +30,14 @@ jobs:
           python-version: "3.12"
       - run: pip install --quiet yfinance pandas lxml
       - run: scripts/stockdata_sync.sh pull "$OUT_DIR"
-      - run: python -u scripts/fetch_stocks.py
-      - run: scripts/stockdata_sync.sh push "$OUT_DIR"
+      - name: Skip if today's full pull already ran
+        id: guard
+        run: |
+          today=$(TZ=America/New_York date +%F)
+          last=$(python -c "import json,sys;from datetime import datetime;from zoneinfo import ZoneInfo;d=json.load(open(sys.argv[1]))['updated'];print(datetime.fromisoformat(d).astimezone(ZoneInfo('America/New_York')).date())" "$OUT_DIR/index.json" 2>/dev/null || echo none)
+          echo "last full pull: $last, today: $today"
+          if [ "$last" = "$today" ] && [ "${{ github.event_name }}" = schedule ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.guard.outputs.skip != '1'
+        run: python -u scripts/fetch_stocks.py
+      - if: steps.guard.outputs.skip != '1'
+        run: scripts/stockdata_sync.sh push "$OUT_DIR"

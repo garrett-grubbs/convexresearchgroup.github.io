@@ -567,9 +567,41 @@ def options_only(n):
     print(f"Refreshed options for {ok}/{len(top)} names in {time.time() - started:.0f}s")
 
 
+def premarket_only(n):
+    """Pre-market prices for the n largest names (info call only; fast)."""
+    with open(INDEX) as fh:
+        rows = json.load(fh)["stocks"]
+    top = sorted(rows, key=lambda r: -(r.get("mcap") or 0))[:n]
+
+    def one(r):
+        import yfinance as yf
+        path = os.path.join(DIR, yf_sym(r["t"]) + ".json")
+        if not os.path.exists(path):
+            return False
+        info = with_retry(lambda: yf.Ticker(yf_sym(r["t"])).info) or {}
+        pre = info.get("preMarketPrice")
+        with open(path) as fh:
+            rec = json.load(fh)
+        rec["pre"] = {"price": rnd(pre), "chgPct": rnd(info.get("preMarketChangePercent"))} if pre else None
+        with open(path, "w") as fh:
+            json.dump(rec, fh, separators=(",", ":"))
+        return bool(pre)
+
+    ok = 0
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        for fut in as_completed([ex.submit(one, r) for r in top]):
+            try:
+                ok += bool(fut.result())
+            except Exception as e:
+                print(f"premarket: {e}", file=sys.stderr)
+    print(f"Pre-market prices for {ok}/{len(top)} names")
+
+
 if __name__ == "__main__":
     if "--quotes" in sys.argv:
         quotes_only()
+    elif "--premarket" in sys.argv:
+        premarket_only(int(sys.argv[sys.argv.index("--premarket") + 1]))
     elif "--options" in sys.argv:
         options_only(int(sys.argv[sys.argv.index("--options") + 1]))
     else:

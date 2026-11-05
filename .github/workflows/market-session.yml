@@ -1,0 +1,38 @@
+name: Market session
+
+# One long-running job per weekday keeps markets, bonds and stock prices fresh on a
+# fixed 30-minute clock (see scripts/session.py). GitHub skips or delays cron runs
+# often, so there are hourly backup starts: one session runs, one more waits its
+# turn, and later starts take that waiting spot. A session that hits the 6-hour job
+# limit hands off to the waiting one; starts outside 7am to 6pm ET exit immediately.
+
+on:
+  schedule:
+    - cron: "13 10-23 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-session
+  cancel-in-progress: false
+
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      OUT_DIR: ${{ github.workspace }}/stockdata
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet yfinance pandas
+      - run: |
+          git config user.name "crg-bot"
+          git config user.email "actions@users.noreply.github.com"
+      - run: python -u scripts/session.py

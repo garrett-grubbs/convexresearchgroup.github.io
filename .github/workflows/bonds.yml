@@ -2,16 +2,12 @@ name: Update bonds data
 
 on:
   schedule:
-    # weekdays: before the open, after 1pm ET auction results, after the close (UTC; ET is UTC-5 in winter)
-    - cron: "30 11,18,22 * * 1-5"
+    # the market session refreshes bonds during the day; this is an evening backup
+    - cron: "47 23 * * 1-5"
   workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: data-commit
-  cancel-in-progress: false
 
 jobs:
   update:

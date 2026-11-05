@@ -1,19 +1,11 @@
 name: Update market data
 
 on:
-  schedule:
-    # every 30 min, 8am-6pm ET on weekdays (UTC hours cover both EST and EDT)
-    - cron: "*/30 12-22 * * 1-5"
-    # one Saturday run to settle Friday's closing marks
-    - cron: "0 14 * * 6"
+  # Runs inside the market session now (market-session.yml); kept for manual refreshes.
   workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: data-commit
-  cancel-in-progress: false
 
 jobs:
   update:
