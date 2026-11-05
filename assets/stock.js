@@ -1,6 +1,9 @@
 /* Stock lookup section: search, today's movers and the per-stock desk view. Needs charts.js. */
 (() => {
 let scrollOnRender = !!new URLSearchParams(location.search).get('t');
+// The stock view only takes over when the URL is on the Stocks tab, so other tab links
+// (Home, Markets...) aren't pulled back here by the browser's history events.
+const onStocksTab = () => location.hash === '#stocks' || (!location.hash && !!new URLSearchParams(location.search).get('t'));
   // local preview reads ./stockdata/; the live site reads the stock-data branch
 const BASE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'stockdata/' : 'https://raw.githubusercontent.com/garrett-grubbs/convexresearchgroup.github.io/stock-data/';
 const getData = p => fetch(BASE + p + '?v=' + Math.floor(Date.now() / 300000)).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -64,7 +67,7 @@ function go(t) {
   history.pushState({ t }, '', '?t=' + encodeURIComponent(t) + '#stocks');
   route();
 }
-window.addEventListener('popstate', route);
+window.addEventListener('popstate', () => { if (onStocksTab()) route(); });
 
 /* ---------- landing: movers ---------- */
 function moverTable(title, sub, rows, col) {
@@ -307,7 +310,7 @@ async function route() {
     return;
   }
   renderStock(s);
-  if (scrollOnRender) { window.showTab && window.showTab('stocks'); window.scrollTo(0, 0); }
+  if (scrollOnRender && onStocksTab()) { window.showTab && window.showTab('stocks'); window.scrollTo(0, 0); }
   scrollOnRender = true;
 }
 
