@@ -114,7 +114,7 @@ def build_rates():
     wanted = [s for s, _, _ in NOMINAL] + list(REAL.values()) + list(RATES)
     for sid in wanted:
         try:
-            raw[sid] = fred(sid, start5 if sid in ("THREEFYTP10", "T10Y2Y", "T5YIFR") else start1)
+            raw[sid] = fred(sid, start5)  # 5 years for every series so the 5Y range and percentile are real
         except Exception as e:
             print(f"FRED {sid}: {e}", file=sys.stderr)
 
