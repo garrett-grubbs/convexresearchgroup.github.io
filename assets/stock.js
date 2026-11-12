@@ -34,7 +34,7 @@ function search(term) {
     else if (n.startsWith(term)) namePre.push(r);
     else if (term.length > 2 && n.includes(term)) nameIn.push(r);
   }
-  tick.sort((a, b) => (a.t === term ? -1 : b.t === term ? 1 : a.t.length - b.t.length || (b.mcap || 0) - (a.mcap || 0)));
+  tick.sort((a, b) => (a.t === term ? -1 : b.t === term ? 1 : (b.mcap || 0) - (a.mcap || 0)));   // exact ticker first, then largest company
   return [...tick, ...namePre, ...nameIn].slice(0, 8);
 }
 function drawAc() {
@@ -316,18 +316,12 @@ async function route() {
 
 getData('index.json').then(idx => {
   const hint = document.getElementById('hint');
-  if (!idx) { hint.textContent = "Stock data isn't available right now. Try again in a few minutes."; return; }
+  const share = v => window.CRG && window.CRG._stocks && window.CRG._stocks(v);   // home page movers + command bar
+  if (!idx) { hint.textContent = "Stock data isn't available right now. Try again in a few minutes."; share(null); return; }
   indexMeta = idx; INDEX = idx.stocks || [];
   INDEX.forEach(r => byT.set(r.t, r));
   hint.textContent = `${INDEX.length.toLocaleString()} U.S. stocks above $250M. Snapshot ${fmtET(idx.updated)}${idx.quotesUpdated && idx.quotesUpdated !== idx.updated ? ', prices ' + fmtET(idx.quotesUpdated) : ''}.`;
+  share({ meta: idx, rows: INDEX, go, search });
   route();
-});
-
-// Homepage hero ticker box: open the stock in the section below instead of leaving the page
-const heroForm = document.querySelector('.hero-search');
-if (heroForm) heroForm.addEventListener('submit', e => {
-  e.preventDefault();
-  const t = heroForm.querySelector('input').value.trim().toUpperCase();
-  if (t) { heroForm.querySelector('input').value = ''; go(t); }
 });
 })();

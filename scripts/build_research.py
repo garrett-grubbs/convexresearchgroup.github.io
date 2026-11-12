@@ -98,6 +98,27 @@ def ai_summary(path):
         return None
 
 
+THUMBS = os.path.join(NOTES, "thumbs")
+
+
+def thumb_for(name):
+    """First-page preview image for the site (notes/thumbs/<name>.webp). Made once per PDF."""
+    stem = os.path.splitext(name)[0]
+    rel = "notes/thumbs/" + stem + ".webp"
+    out = os.path.join(THUMBS, stem + ".webp")
+    if not os.path.exists(out):
+        try:
+            import pypdfium2 as pdfium
+            os.makedirs(THUMBS, exist_ok=True)
+            page = pdfium.PdfDocument(os.path.join(NOTES, name))[0]
+            img = page.render(scale=360 / page.get_width()).to_pil().convert("RGB")
+            img.save(out, "WEBP", quality=72, method=6)
+        except Exception as e:
+            print(f"Thumbnail failed for {name}: {e}", file=sys.stderr)
+            return None
+    return urllib.parse.quote(rel)
+
+
 def main():
     meta = {}
     if os.path.exists(META):
@@ -127,6 +148,7 @@ def main():
             "title": info["title"],
             "summary": info.get("summary", ""),
             "tag": info.get("tag") or DEFAULT_TAGS.get(kind, "Research"),
+            "thumb": thumb_for(name),
         })
 
     items.sort(key=lambda r: r["date"] or "0000", reverse=True)
