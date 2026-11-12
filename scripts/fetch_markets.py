@@ -184,6 +184,8 @@ def build_yahoo():
                 "chg": round(last - prev, 4), "chgPct": pct(last, prev),
                 "wkPct": pct(last, wk) if wk else None, "ytdPct": pct(last, ytd_ref),
                 "asOf": closes.index[-1].date().isoformat(),
+                # last 30 closes for the homepage sparklines
+                "spark": [round(float(v), 4) for v in closes.iloc[-30:]],
             })
             if t == "^GSPC":
                 tail = closes.iloc[-130:]
