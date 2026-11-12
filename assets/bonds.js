@@ -129,10 +129,10 @@ function render(b) {
 }
 
 /* ---------------- compare tool ---------------- */
-// Colors validated for any pair (light surface); each slot also has its own dash pattern
-const SLOTS = [
-  { color: '#2a78d6', dash: '' }, { color: '#eb6834', dash: '7 4' },
-  { color: '#1baf7a', dash: '2 3' }, { color: '#8a5a00', dash: '9 3 2 3' },
+// Each slot has its own color (validated per theme) and its own dash pattern, so identity never rests on color alone
+const SLOTS = [  // --c1..--c4 are set per theme in site.css
+  { color: 'var(--c1)', dash: '' }, { color: 'var(--c2)', dash: '7 4' },
+  { color: 'var(--c3)', dash: '2 3' }, { color: 'var(--c4)', dash: '9 3 2 3' },
 ];
 const RANGES = [['1M', 31], ['3M', 92], ['6M', 183], ['YTD', 'ytd'], ['1Y', 366], ['2Y', 731], ['5Y', 1830]];
 const GROUP_ORDER = ['Treasuries', 'Real yields', 'Inflation', 'Policy and funding', 'Mortgages', 'Corporate yields'];
@@ -235,11 +235,8 @@ function cmpDraw() {
   const fmtX = (d, full) => full ? fmtDayYr(d) : (xs.length > 400 ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : fmtDay(d));
   lineChart(chartEl, { series, xs, xLabel: fmtX, xTicks: dateTicks, yFmt, height: 320, zero: cmp.mode !== 'level' });
   // only one redraw entry for this chart: drop the one from the previous draw
-  if (cmpRedraw != null) { const k = window.redraws.indexOf(cmpRedraw); if (k >= 0) window.redraws.splice(k, 1); }
-  cmpRedraw = window.redraws[window.redraws.length - 1];
   table.innerHTML = rowsHtml ? `<table class="mk"><thead><tr><th>Series</th><th>Latest</th><th>Change, ${esc(cmp.range)}</th><th>Low</th><th>High</th></tr></thead><tbody>${rowsHtml}</tbody></table>` : '';
 }
-let cmpRedraw = null;
 
 function cmpInit(h) {
   if (!h) { document.getElementById('cmp-hint').textContent = "Yield history isn't available right now."; return; }
@@ -253,10 +250,10 @@ function cmpInit(h) {
   cmpDraw();
 }
 
-getJSON('data/bonds.json').then(render);
+(window.CRG && window.CRG.bonds ? window.CRG.bonds : getJSON('data/bonds.json')).then(render);
 // history is ~300KB: fetch it the first time the Bonds tab is opened
 let histLoaded = false;
 const loadHist = () => { if (histLoaded) return; histLoaded = true; getJSON('data/bond_history.json').then(cmpInit); };
 if (!document.getElementById('bonds').hidden) loadHist();
-window.addEventListener('hashchange', () => { if (location.hash === '#bonds') loadHist(); });
+window.addEventListener('tabshow', e => { if (e.detail === 'bonds') loadHist(); });
 })();

@@ -1,6 +1,6 @@
 /* Shared helpers + charts for convexresearchgroup.com (no dependencies). */
-  const bust = '?v=' + Math.floor(Date.now() / 60000);
-const getJSON = p => fetch(p + bust).then(r => r.ok ? r.json() : null).catch(() => null);
+const bust = '?v=' + Math.floor(Date.now() / 60000);
+const getJSON = p => fetch(p + '?v=' + Math.floor(Date.now() / 60000)).then(r => r.ok ? r.json() : null).catch(() => null);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const SVGNS = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs = {}, parent) => {
@@ -19,14 +19,34 @@ const decimals = t => t === 'USDJPY=X' ? 2 : /=X$/.test(t) ? 4 : 2;
 const fmtDay = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const fmtDayYr = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 const fmtET = iso => new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' }) + ' ET';
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/* ---------- generic line chart (shared x positions, crosshair tooltip) ---------- */
-function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = false }) {
+/* ---------- redraw registry ----------
+   Charts size themselves to their container, so each one registers a draw function that runs
+   again on resize and when its tab becomes visible. Keyed by element: re-rendering a chart
+   replaces its entry, and charts that left the page are dropped. */
+const drawFns = new Map();
+const redraws = {
+  forEach(fn) { drawFns.forEach((draw, el) => { if (el.isConnected) fn(draw); else drawFns.delete(el); }); },
+};
+window.redraws = redraws;
+let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => redraws.forEach(f => f()), 150); });
+// true the first time a chart is drawn while actually visible: that draw gets the entrance animation
+const firstVisibleDraw = el => {
+  if (reduceMotion || el.offsetParent === null || el.dataset.drawn) return false;
+  el.dataset.drawn = '1';
+  return true;
+};
+
+/* ---------- generic line chart (shared x positions, crosshair tooltip) ----------
+   series: [{ name, color, ys, dash, dots, width, label(i) -> text|null }] */
+function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = false, margin }) {
   const draw = () => {
     if (!el.isConnected || (el.offsetParent === null && el.innerHTML)) return;  // hidden tab: keep last render
+    const animate = firstVisibleDraw(el);
     el.innerHTML = '';
     const W = Math.max(260, el.clientWidth), H = height;
-    const m = { t: 10, r: 12, b: 26, l: 44 };
+    const m = { t: 10, r: 12, b: 26, l: 44, ...(margin || {}) };
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
     const all = series.flatMap(s => s.ys.filter(v => v != null));
     if (!all.length) { el.innerHTML = '<p class="mk-empty">No data yet.</p>'; return; }
@@ -53,12 +73,29 @@ function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = 
     series.forEach(s => {
       let d = '';
       s.ys.forEach((v, i) => { if (v != null) d += (d ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); });
-      svgEl('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': s.dash ? (typeof s.dash === 'string' ? s.dash : '5 4') : 'none' }, svg);
-      if (s.dots) s.ys.forEach((v, i) => v != null && svgEl('circle', { cx: x(i), cy: y(v), r: 3.5, fill: s.color, stroke: '#fff', 'stroke-width': 2 }, svg));
+      const dash = s.dash ? (typeof s.dash === 'string' ? s.dash : '5 4') : null;
+      const path = svgEl('path', { d, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      if (dash) path.setAttribute('stroke-dasharray', dash);
+      if (animate) {
+        if (dash) path.setAttribute('class', 'fade-in');           // dashed lines fade, solid lines draw
+        else { path.setAttribute('pathLength', '1'); path.setAttribute('class', 'draw-in'); }
+      }
+      if (s.dots) s.ys.forEach((v, i) => {
+        if (v == null) return;
+        const c = svgEl('circle', { cx: x(i), cy: y(v), r: 3.5, fill: s.dotColor || s.color, stroke: 'var(--halo)', 'stroke-width': 2 }, svg);
+        if (animate) { c.setAttribute('class', 'fade-in'); c.style.animationDelay = (350 + i * 45) + 'ms'; }
+      });
+      if (s.label) s.ys.forEach((v, i) => {
+        const txt = v == null ? null : s.label(i);
+        if (!txt) return;
+        const t = svgEl('text', { x: Math.min(Math.max(x(i), m.l + 16), W - m.r - 16), y: y(v) - 11, 'text-anchor': 'middle', class: 'pt-label' + (animate ? ' fade-in' : '') }, svg);
+        if (animate) t.style.animationDelay = '700ms';
+        t.textContent = txt;
+      });
     });
     // hover layer
     const hair = svgEl('line', { class: 'hair', y1: m.t, y2: m.t + ih, opacity: 0 }, svg);
-    const marks = series.map(s => svgEl('circle', { r: 4.5, fill: s.color, stroke: '#fff', 'stroke-width': 2, opacity: 0 }, svg));
+    const marks = series.map(s => svgEl('circle', { r: 4.5, fill: s.dotColor || s.color, stroke: 'var(--halo)', 'stroke-width': 2, opacity: 0 }, svg));
     const tip = document.createElement('div'); tip.className = 'tip'; el.appendChild(tip);
     const hit = svgEl('rect', { x: m.l, y: 0, width: iw, height: H, fill: 'transparent', tabindex: 0 }, svg);
     const show = i => {
@@ -98,8 +135,8 @@ function lineChart(el, { series, xs, xLabel, yFmt, height = 220, xTicks, zero = 
       if (e.key === 'ArrowRight') { cur = Math.min(n - 1, cur + 1); show(cur); }
     });
   };
+  drawFns.set(el, draw);
   draw();
-  redraws.push(draw);
 }
 function niceStep(raw) {
   const p = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -110,14 +147,22 @@ const dateTicks = (n, iw) => {
   const k = iw < 360 ? 3 : 5;
   return [...Array(k).keys()].map(j => Math.round(j * (n - 1) / (k - 1)));
 };
-const redraws = [];
-window.redraws = redraws;
-let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => redraws.forEach(f => f()), 150); });
+
+/* ---------- sparkline: a small trend line that stretches to its container ---------- */
+function sparkline(values, { w = 120, h = 30 } = {}) {
+  const v = (values || []).filter(x => x != null);
+  if (v.length < 2) return '';
+  const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+  const X = i => (i / (v.length - 1)) * (w - 6) + 3, Y = x => h - 4 - ((x - lo) / span) * (h - 8);
+  const d = v.map((x, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(x).toFixed(1)).join('');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" vector-effect="non-scaling-stroke"/></svg>`;
+}
 
 /* ---------- diverging horizontal bars ---------- */
 function sectorBars(el, rows) {
   const draw = () => {
     if (!el.isConnected || (el.offsetParent === null && el.innerHTML)) return;  // hidden tab: keep last render
+    const animate = firstVisibleDraw(el);
     el.innerHTML = '';
     if (!rows.length) { el.innerHTML = '<p class="mk-empty">No data yet.</p>'; return; }
     const sorted = [...rows].sort((a, b) => b.chgPct - a.chgPct);
@@ -134,7 +179,12 @@ function sectorBars(el, rows) {
       const w = Math.max(2, Math.abs(r.chgPct) * sc);
       const pos = r.chgPct >= 0;
       svgEl('rect', { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: 'transparent' }, g);
-      svgEl('rect', { x: pos ? x0 + 1 : x0 - 1 - w, y: cy - 7, width: w, height: 14, rx: 3, fill: pos ? 'var(--up)' : 'var(--down)' }, g);
+      const bar = svgEl('rect', { x: pos ? x0 + 1 : x0 - 1 - w, y: cy - 7, width: w, height: 14, rx: 3, fill: pos ? 'var(--up)' : 'var(--down)' }, g);
+      if (animate) {  // bars grow out from the zero line
+        bar.setAttribute('class', 'grow-in');
+        bar.style.transformOrigin = x0 + 'px ' + cy + 'px';
+        bar.style.animationDelay = (i * 30) + 'ms';
+      }
       const l = svgEl('text', { x: 0, y: cy + 4, class: 'lbl' }, g); l.textContent = r.name;
       const v = svgEl('text', { x: W, y: cy + 4, 'text-anchor': 'end', class: 'val' }, g); v.textContent = fmtPct(r.chgPct);
       const on = () => {
@@ -151,6 +201,6 @@ function sectorBars(el, rows) {
       g.addEventListener('pointerleave', () => tip.classList.remove('on')); g.addEventListener('blur', () => tip.classList.remove('on'));
     });
   };
-  draw(); redraws.push(draw);
+  drawFns.set(el, draw);
+  draw();
 }
-
